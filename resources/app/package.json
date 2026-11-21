@@ -1,0 +1,25 @@
+{
+  "description": "DeepSeekちゃん デスクトップAI VTuber（Electron / DeepSeek API / VOICEVOX / VRM・PNGアバター）",
+  "devDependencies": {
+    "electron": "^39.2.7"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "license": "CC-BY-NC-SA-4.0",
+  "main": "main.js",
+  "name": "deepseek-chan-desktop",
+  "private": true,
+  "scripts": {
+    "check": "node --check main.js && node --check preload.js && node --check src/core/rotating-log.js && node --check src/core/calendar-store.js && node --check src/core/calendar-presence.js && node --check tests/calendar-store.test.js && node --check tests/calendar-presence.test.js && node --check tests/config.test.js && node --check src/core/performance-metrics.js && node --check src/core/audio-buffer.js && node --check src/core/thinking-fillers.js && node --check src/core/avatar-motion.js && node --check src/core/autonomy.js && node --check src/core/desktop-context.js && node --check src/core/windows-desktop-context.js && node --check src/core/deepseek.js && node --check src/core/voicevox.js && node --check src/core/qwen-tts.js && node --check src/core/history.js && node --check src/core/config.js && node --check src/core/parser.js && node --check src/core/adaptive-voice.js && node --check src/core/silent-reactions.js && node --check src/core/motion-arbitration.js && node --check src/core/streaming-speech.js && node --check src/core/conversation.js && node --check src/core/long-term-memory.js && node --check src/core/proactive-followups.js && node --check src/core/plugins.js && node --check src/plugins/idle-talk.js && node --check renderer/renderer.js && node --check renderer/avatar-png.js && node --check renderer/avatar-live2d.js && node --check voice-smoke-qa.js && node --check tests/desktop-context.test.js && node --check tests/motion-arbitration.test.js && node --check tests/long-term-memory.test.js && node --check tests/proactive-followups.test.js && node --check tests/electron-live2d-harness.js && node --check tests/run-electron-live2d-e2e.js && node --check tests/run-qwen-voice-smoke.js",
+    "start": "electron .",
+    "test:electron": "node tests/run-electron-live2d-e2e.js",
+    "smoke:qwen": "node tests/run-qwen-voice-smoke.js",
+    "test": "node --test tests/*.test.js"
+  },
+  "version": "0.1.0",
+  "dependencies": {
+    "@pixiv/three-vrm": "^3.4.4",
+    "three": "^0.167.0"
+  }
+}
