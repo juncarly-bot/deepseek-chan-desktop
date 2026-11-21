@@ -1,0 +1,416 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-jpDOVhdrBCD9phRLzS+dcyBxssgKr7DZD6fA7djp7vA='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self' blob: data: https://api.deepseek.com http://127.0.0.1:50021 http://localhost:50021; worker-src 'self' blob:;" />
+    <title>DeepSeekちゃん</title>
+    <link rel="stylesheet" href="style.css" />
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "../node_modules/three/build/three.module.js",
+          "three/addons/": "../node_modules/three/examples/jsm/",
+          "@pixiv/three-vrm": "../node_modules/@pixiv/three-vrm/lib/three-vrm.module.js"
+        }
+      }
+    </script>
+  </head>
+  <body>
+    <div id="app">
+      <header id="titlebar">
+        <div class="title">
+          <span class="dot" id="voiceDot" title="VOICEVOX 接続状態"></span>
+          <strong id="charName">DeepSeekちゃん</strong>
+          <span id="statusText" class="status">起動中…</span>
+        </div>
+        <div class="win-buttons">
+          <button id="btnVoiceTools" title="声と動きの操作" aria-expanded="false" aria-controls="voiceStudio">♪</button>
+          <button id="btnHistory" title="会話履歴の検索" aria-expanded="false" aria-controls="historyBar">☰</button>
+          <button id="btnCalendar" title="ローカルカレンダー" aria-expanded="false" aria-controls="calendarPanel">📅</button>
+          <button id="btnMode" title="ウィンドウサイズ切替">⤢</button>
+          <button id="btnSettings" title="設定">⚙</button>
+          <button id="btnHide" title="隠す（トレイに常駐）">―</button>
+        </div>
+      </header>
+
+      <section id="avatarArea">
+        <div id="vrmContainer"></div>
+        <canvas id="pngCanvas" width="360" height="360"></canvas>
+        <img id="pngFallback" alt="DeepSeekちゃん" />
+        <div id="emotionLabel"></div>
+        <div id="silentReactionBubble" aria-hidden="true" hidden></div>
+        <div id="followUpCard" class="follow-up-card" role="status" hidden>
+          <div class="follow-up-head"><strong>前の話のつづき</strong><button id="btnDismissFollowUp" type="button" aria-label="閉じる">×</button></div>
+          <p id="followUpText"></p>
+          <div class="follow-up-actions">
+            <button type="button" data-follow-up-action="completed">完了した</button>
+            <button type="button" data-follow-up-action="working">まだ取り組んでいる</button>
+            <button type="button" data-follow-up-action="mute">この話題はもう聞かない</button>
+            <button type="button" data-follow-up-action="edit">記憶を修正する</button>
+          </div>
+          <div class="follow-up-snooze">
+            <input id="followUpRemindAt" type="datetime-local" aria-label="再確認する日時" />
+            <button id="btnLaterFollowUp" type="button">あとで確認</button>
+          </div>
+        </div>
+        <div id="calendarPresenceCard" class="follow-up-card calendar-presence-card" role="status" hidden>
+          <div class="follow-up-head"><strong id="calendarPresenceHeading">カレンダー</strong><button id="btnDismissCalendarPresence" type="button" aria-label="閉じる">×</button></div>
+          <p id="calendarPresenceText"></p>
+          <div class="follow-up-actions"><button type="button" data-calendar-presence-action="completed">完了した</button><button type="button" data-calendar-presence-action="start">始める</button><button type="button" data-calendar-presence-action="later">あとで</button><button type="button" data-calendar-presence-action="rest">今日は休む</button><button type="button" data-calendar-presence-action="mute">この予定は通知しない</button></div>
+        </div>
+      </section>
+
+      <section id="voiceStudio" hidden>
+        <select id="quickVoice" aria-label="声" disabled><option value="voice-a">お気に入りの声（候補A）</option><option value="Vivian">Vivian・明るい声</option><option value="Serena">Serena・柔らかい声</option><option value="Uncle_Fu">Uncle_Fu</option><option value="Dylan">Dylan</option><option value="Eric">Eric</option><option value="Ryan">Ryan</option><option value="Aiden">Aiden</option><option value="Ono_Anna">Ono_Anna</option><option value="Sohee">Sohee</option></select>
+        <button id="btnVoicePreview">選択した感情で口パク試聴</button>
+        <button id="btnMotionPreview">選択した感情をプレビュー</button>
+        <button id="btnEmotionReset">自動・通常に戻す</button>
+        <select id="faceSelect" aria-label="表情の切り替え">
+          <option value="auto">表情：会話に合わせて自動</option>
+          <option value="neutral">通常</option>
+          <option value="happy">喜び</option>
+          <option value="shy">照れ</option>
+          <option value="excited">興奮</option>
+          <option value="thinking">思考</option>
+          <option value="sleepy">眠気</option>
+          <option value="proud">得意げ</option>
+          <option value="sad">悲しみ</option>
+          <option value="annoyed">不満</option>
+          <option value="surprised">驚き</option>
+          <option value="greeting">挨拶</option>
+          <option value="playful">いたずら</option>
+          <option value="flustered">慌てる</option>
+          <option value="confused">困惑</option>
+          <option value="pout">拗ねる</option>
+        </select>
+        <span id="voiceProgress" role="status">Qwenを準備中…</span>
+      </section>
+      <section id="chatLog" aria-live="polite"></section>
+
+      <section id="historyBar" hidden>
+        <input id="historySearch" type="search" placeholder="過去の会話を検索…" />
+        <button id="btnClearHistory" title="履歴をすべて削除">履歴削除</button>
+      </section>
+
+      <footer id="inputBar">
+        <button id="btnMic" title="音声入力（マイク）">🎤</button>
+        <input id="chatInput" type="text" placeholder="DeepSeekちゃんに話しかけてね…" autocomplete="off" />
+        <button id="btnSend">送信</button>
+      </footer>
+      <label class="autosend"><input type="checkbox" id="chkAutoSend" checked /> 音声入力したら自動送信</label>
+
+      <section id="calendarPanel" class="calendar-panel hidden" aria-label="ローカルカレンダー">
+        <header class="calendar-header">
+          <strong>DeepSeekちゃんカレンダー</strong>
+          <div class="calendar-tools">
+            <button id="btnCalendarImport" type="button">読み込み</button>
+            <button id="btnCalendarExport" type="button">バックアップ</button>
+            <button id="btnCalendarRestoreBackup" type="button" hidden>バックアップから復元</button>
+            <button id="btnCloseCalendar" type="button" aria-label="カレンダーを閉じる">✕</button>
+          </div>
+        </header>
+        <div class="calendar-scroll">
+          <div class="calendar-privacy">
+            <label><input id="calendarShareWithAssistant" type="checkbox" /> 将来、会話AIに予定を共有することを許可</label>
+            <p class="hint">初期OFFです。Phase 8Aでは予定をDeepSeek APIやQwenへ送信しません。この許可は会話への自動共有をまだ有効にしません。</p>
+          </div>
+          <div class="calendar-presence-controls">
+            <button id="btnCalendarBriefing" type="button">今日の予定を確認</button>
+            <button id="btnCalendarPresencePause" type="button">自動通知を24時間停止</button>
+            <div id="calendarPresenceHistory" class="calendar-presence-history" aria-live="polite"></div>
+          </div>
+          <div id="calendarBriefing" class="calendar-briefing" hidden></div>
+          <div id="calendarStatus" class="calendar-status" role="status"></div>
+          <div class="calendar-search"><input id="calendarSearchQuery" type="search" maxlength="120" placeholder="予定名・メモを検索…" aria-label="予定名またはメモを検索" />
+            <select id="calendarSearchCategory" aria-label="予定の種類で絞り込む"><option value="">すべて</option><option value="lesson">授業</option><option value="exam">試験</option><option value="assignment">課題</option><option value="study">勉強</option><option value="personal">個人</option><option value="other">その他</option></select>
+            <button id="btnCalendarSearch" type="button">検索</button></div>
+          <div id="calendarSearchResults" class="calendar-search-results" aria-live="polite" hidden></div>
+          <div class="calendar-summary">
+            <section><strong>今日</strong><div id="calendarTodaySummary"></div></section>
+            <section><strong>明日</strong><div id="calendarTomorrowSummary"></div></section>
+            <section><strong>今週</strong><div id="calendarWeekSummary"></div></section>
+          </div>
+          <div class="calendar-month-toolbar">
+            <button id="btnCalendarPrev" type="button" aria-label="前の月">‹</button>
+            <strong id="calendarMonthTitle"></strong>
+            <button id="btnCalendarNext" type="button" aria-label="次の月">›</button>
+            <button id="btnCalendarToday" type="button">今日へ</button>
+          </div>
+          <div class="calendar-weekdays" aria-hidden="true"><span>日</span><span>月</span><span>火</span><span>水</span><span>木</span><span>金</span><span>土</span></div>
+          <div id="calendarGrid" class="calendar-grid" role="grid"></div>
+          <div class="calendar-agenda-head"><strong id="calendarSelectedDate"></strong><button id="btnNewCalendarEvent" class="primary" type="button">＋ 予定を追加</button></div>
+          <div id="calendarAgenda" class="calendar-agenda"></div>
+          <form id="calendarForm" class="calendar-editor" hidden>
+            <strong id="calendarFormTitle">予定を登録</strong>
+            <label>予定名 <input id="calendarEventTitle" type="text" maxlength="120" required /></label>
+            <label>種類
+              <select id="calendarCategory"><option value="lesson">授業</option><option value="exam">試験</option><option value="assignment">課題・レポート</option><option value="study">勉強予定</option><option value="personal">個人予定</option><option value="other">その他</option></select>
+            </label>
+            <label class="calendar-inline"><input id="calendarAllDay" type="checkbox" /> 終日</label>
+            <label class="calendar-inline"><input id="calendarHasStart" type="checkbox" checked /> 開始日時を設定</label>
+            <div class="calendar-field-grid">
+              <label>開始日 <input id="calendarStartDate" type="date" required /></label>
+              <label id="calendarStartTimeWrap">開始時刻 <input id="calendarStartTime" type="time" value="09:00" /></label>
+              <label>終了日 <input id="calendarEndDate" type="date" /></label>
+              <label id="calendarEndTimeWrap">終了時刻 <input id="calendarEndTime" type="time" /></label>
+              <label>締切日時 <input id="calendarDeadline" type="datetime-local" /></label>
+            </div>
+            <div id="calendarTaskStatusWrap" hidden>
+              <label>進捗 <select id="calendarTaskStatus"><option value="not_started">未着手</option><option value="in_progress">進行中</option><option value="completed">完了</option><option value="cancelled">取り消し</option></select></label>
+            </div>
+            <label class="calendar-inline"><input id="calendarNotify" type="checkbox" /> この予定の通知を希望（設定で通知機能をONにした場合に有効）</label>
+            <label class="calendar-inline"><input id="calendarWeekly" type="checkbox" /> 毎週繰り返す</label>
+            <div id="calendarRepeatOptions" hidden>
+              <div id="calendarWeekdayPicks" class="calendar-weekday-picks">
+                <label><input type="checkbox" value="0" /> 日</label><label><input type="checkbox" value="1" /> 月</label>
+                <label><input type="checkbox" value="2" /> 火</label><label><input type="checkbox" value="3" /> 水</label>
+                <label><input type="checkbox" value="4" /> 木</label><label><input type="checkbox" value="5" /> 金</label><label><input type="checkbox" value="6" /> 土</label>
+              </div>
+              <label>繰り返し終了日 <input id="calendarRepeatEnd" type="date" /></label>
+              <label class="calendar-inline"><input id="calendarOvernight" type="checkbox" /> 終了日は翌日</label>
+            </div>
+            <label>メモ <textarea id="calendarMemo" rows="2" maxlength="2000"></textarea></label>
+            <label>関連する長期記憶（任意） <select id="calendarLinkedMemory"><option value="">リンクしない</option></select></label>
+            <label id="calendarEditScopeWrap" hidden>編集範囲 <select id="calendarEditScope"><option value="occurrence">この日だけ</option><option value="series">繰り返し全体</option></select></label>
+            <div class="calendar-form-actions"><button class="primary" type="submit">保存</button><button id="btnDeleteCalendarEvent" type="button">削除</button><button id="btnCancelCalendarEdit" type="button">閉じる</button></div>
+          </form>
+        </div>
+      </section>
+    </div>
+
+    <div id="settingsPanel" class="hidden">
+      <div class="settings-head">
+        <strong>設定</strong>
+        <button id="btnCloseSettings">✕</button>
+      </div>
+      <div class="settings-body">
+        <fieldset>
+          <legend>DeepSeek API</legend>
+          <label>APIキー（このPC内にだけ保存されます）
+            <input id="setApiKey" type="password" placeholder="sk-…（未設定）" />
+          </label>
+          <label>モデル
+            <select id="setModel">
+              <option value="deepseek-flash">DeepSeek Flash（標準）</option>
+              <option value="deepseek-v4-pro">DeepSeek V4 Pro（高精度）</option>
+            </select>
+          </label>
+          <label>推論モード
+            <select id="setThinkingMode">
+              <option value="disabled">OFF（通常会話）</option>
+              <option value="enabled">ON（回答前に深く考える）</option>
+            </select>
+          </label>
+          <p class="hint">キーは環境変数 <code>DEEPSEEK_API_KEY</code> でも設定できます。コードには保存されません。</p>
+        </fieldset>
+
+        <fieldset>
+          <legend>キャラクター（人格設定）</legend>
+          <label>名前 <input id="setCharName" type="text" /></label>
+          <label>性格 <textarea id="setPersonality" rows="3"></textarea></label>
+          <label>話し方 <textarea id="setSpeakingStyle" rows="3"></textarea></label>
+          <label>追加設定（自由記述） <textarea id="setExtraPrompt" rows="2" placeholder="例：語尾に「〜なのだ」を付けない、関西弁は使わない 等"></textarea></label>
+        </fieldset>
+
+        <fieldset style="display:none">
+          <legend>音声（TTSエンジン）</legend>
+          <label>音声エンジン
+            <select id="setEngine">
+              <option value="voicevox">VOICEVOX（日本語ネイティブの声・任意）</option>
+              <option value="qwen3">Qwen3-TTS（中国語なまりの日本語）★既定</option>
+            </select>
+          </label>
+          <p class="hint">既定は Qwen3-TTS です。VOICEVOX は任意の旧方式で、使わなくて構いません。</p>
+          <label><input type="checkbox" id="setVoiceEnabled" /> 読み上げを使う</label>
+          <label>VOICEVOX サーバーURL <input id="setVoiceUrl" type="text" /></label>
+          <label>話者 <select id="setSpeaker"></select></label>
+          <button id="btnReloadSpeakers" type="button">話者一覧を再取得</button>
+          <label>話速 <input id="setSpeed" type="number" step="0.1" min="0.5" max="2" /></label>
+          <label>ピッチ <input id="setPitch" type="number" step="0.01" min="-0.15" max="0.15" /></label>
+          <p class="hint">VOICEVOX 本体を起動してから使ってください（既定: http://127.0.0.1:50021）。</p>
+        </fieldset>
+
+
+        <fieldset style="display:none">
+          <legend>音声（Qwen3-TTS / 中国語なまり）</legend>
+          <label>接続方式
+            <select id="setQwenMode">
+              <option value="local">ローカルサーバー（同梱スクリプト・GPU推奨）</option>
+              <option value="cloud">クラウド（Alibaba DashScope）</option>
+            </select>
+          </label>
+          <label>ローカルサーバーURL <input id="setQwenServerUrl" type="text" /></label>
+          <label>DashScope APIキー（クラウド用・このPC内にだけ保存）
+            <input id="setDashscopeKey" type="password" placeholder="sk-…（未設定）" />
+          </label>
+          <label>クラウド用モデル <input id="setQwenModel" type="text" /></label>
+          <label>話者（なまりの出方は実際の音声で確認）
+            <select id="setQwenSpeaker">
+              <option value="Vivian">Vivian（中国語・明るい若い女性）</option>
+              <option value="Serena">Serena（中国語・温かく柔らかい若い女性）</option>
+              <option value="Uncle_Fu">Uncle_Fu（中国語・落ち着いた男性）</option>
+              <option value="Dylan">Dylan（中国語・北京の若い男性）</option>
+              <option value="Eric">Eric（中国語・男性）</option>
+              <option value="Ryan">Ryan（英語・男性）</option>
+              <option value="Aiden">Aiden（英語・男性）</option>
+              <option value="Ono_Anna">Ono_Anna（日本語・なまり無し）</option>
+              <option value="Sohee">Sohee（韓国語・女性）</option>
+            </select>
+          </label>
+          <label>読み上げ言語
+            <select id="setQwenLanguage">
+              <option value="Japanese">Japanese（日本語テキストを読む）</option>
+              <option value="Auto">Auto（自動判定）</option>
+            </select>
+          </label>
+          <label>Qwen 話速（0.8〜1.2）<input id="setQwenSpeed" type="number" min="0.8" max="1.2" step="0.05" /></label>
+          <label>Qwen 声の高さ（半音・−2〜2）<input id="setQwenPitch" type="number" min="-2" max="2" step="0.5" /></label>
+          <label>話し方の指示（1.7B対応・0.6Bでは無効） <input id="setQwenInstruct" type="text" placeholder="例：可愛らしく元気に" /></label>
+          <p class="hint">ローカル音声はアプリと一緒に起動します。0.6Bモデルでは話者・話速・声の高さを調整できます。なまりの強さは話者と文章によって異なります。CPUでの初回生成には時間がかかります。</p>
+        </fieldset>
+        <fieldset>
+          <legend>アバター</legend>
+          <label>表示モード
+            <select id="setAvatarMode">
+              <option value="live2d">Live2D（DeepSeekちゃん）</option>
+            </select>
+          </label>
+          <label>動きの強さ（0で停止・推奨0.7）<input id="setMotionAmount" type="number" min="0" max="1.5" step="0.1" /></label>
+          <label><input type="checkbox" id="setNaturalIdle" /> Live2Dの追加待機モーション（自然な瞬き・呼吸・視線・小さな仕草）</label>
+          <label><input type="checkbox" id="setInstantReaction" /> 話しかけたときにすぐ反応する</label>
+          <label><input type="checkbox" id="setAdaptiveVoice" /> 音声は短く、詳しい回答は画面に表示する</label>
+          <label><input type="checkbox" id="setSilentReactions" /> 控えめな無言の反応と吹き出し</label>
+          <label><input type="checkbox" id="setMotionArbitration" /> 動きの重なりを調整する</label>
+          <label><input type="checkbox" id="setEmotionPersistence" /> 感情の余韻を自然に残す（発話後にゆっくり通常へ戻る）</label>
+          <label><input type="checkbox" id="setLowLatencySpeech" /> 短文バッファで音声を滑らかにする・新しい入力で割り込む（初期OFF）</label>
+          <label><input type="checkbox" id="setThinkingFillersEnabled" /> Qwenの声に合わせた思考フィラー（初期OFF）</label>
+          <label>思考フィラー方式
+            <select id="setThinkingFillersMode">
+              <option value="none">使用しない</option>
+              <option value="opening">冒頭だけ</option>
+              <option value="opening-gap">冒頭＋文間</option>
+            </select>
+          </label>
+          <label>冒頭フィラーの開始待ち
+            <select id="setThinkingFillerStartDelay">
+              <option value="550">550ms</option>
+              <option value="1000">1,000ms（推奨）</option>
+              <option value="1500">1,500ms</option>
+            </select>
+          </label>
+          <label>使用頻度
+            <select id="setThinkingFillersFrequency">
+              <option value="0.2">控えめ（20%）</option>
+              <option value="0.35">低め（35%）</option>
+              <option value="0.6">標準（60%）</option>
+              <option value="0.85">多め（85%）</option>
+            </select>
+          </label>
+          <div class="filler-choices" aria-label="思考フィラーの種類">
+            <label><input type="checkbox" data-filler-id="hmm" /> うーん</label>
+            <label><input type="checkbox" data-filler-id="eto" /> ええと</label>
+            <label><input type="checkbox" data-filler-id="soudesune" /> そうですね</label>
+            <label><input type="checkbox" data-filler-id="n" /> んー</label>
+            <label><input type="checkbox" data-filler-id="naruhodo" /> なるほど</label>
+          </div>
+          <button id="btnPrepareThinkingFillers" type="button">現在のQwenの声でキャッシュを作成</button>
+          <span id="thinkingFillerCacheStatus" class="hint">Qwenの声キャッシュは未作成です</span>
+          <p class="hint">短い候補音声はこのPC内に保存し、通常の読み上げではTTSを呼びません。使用には「短文バッファで音声を滑らかにする」のONと、Qwen音声キャッシュの作成が必要です。</p>
+          <input id="setMouthX" type="hidden" /><input id="setMouthY" type="hidden" />
+          <p class="hint">OFFでは現在の動きを保ちます。追加動作は待機中だけ有効です。</p>
+        </fieldset>
+
+        <fieldset>
+          <legend>長期記憶</legend>
+          <label><input type="checkbox" id="setLongTermMemoryEnabled" /> 会話から重要な情報を端末内に記憶する</label>
+          <p class="hint">ONにすると、今後のあなたの発言だけを端末内のルールで確認し、明示された事実・好み・未完了の話題・予定を保存します。保存先: <code id="memoryStoragePath">確認中…</code>。過去の履歴は下のボタンから候補を確認して個別に保存できます。認証情報や健康情報を自動保存しません。会話内容を記憶抽出のため外部LLMへ送る処理はありません。</p>
+          <label><input type="checkbox" id="setMemorySendContextToDeepSeek" /> 関連する記憶をDeepSeekへ送る</label>
+          <p class="hint">別設定です。ONの場合だけ、現在の質問に関係する最大3件（合計約900文字まで）をDeepSeek APIの会話コンテキストに加えます。OFFなら記憶はこのPCから送信されません。記憶内の文章は参考データとして扱い、命令として使わないよう指示します。</p>
+          <div class="memory-editor">
+            <label>手動で記憶を追加
+              <select id="manualMemoryType">
+                <option value="user_fact">ユーザーの事実</option>
+                <option value="preference">好み</option>
+                <option value="open_loop">未完了の話題</option>
+                <option value="commitment">予定・約束</option>
+              </select>
+            </label>
+            <textarea id="manualMemoryContent" rows="2" maxlength="500" placeholder="例：数学の説明は途中式を入れてほしい"></textarea>
+            <button id="btnAddMemory" type="button">記憶を追加</button>
+          </div>
+          <div id="memoryStatus" class="hint" role="status"></div>
+          <button id="btnScanMemoryHistory" type="button">過去の会話から記憶候補を探す（端末内）</button>
+          <div id="memoryCandidates" class="memory-list"></div>
+          <div id="memoryList" class="memory-list"></div>
+          <button id="btnDeleteAllMemories" type="button">すべての記憶を削除</button>
+        </fieldset>
+
+        <fieldset>
+          <legend>大切な話題のフォローアップ</legend>
+          <label><input type="checkbox" id="setFollowUpsEnabled" /> 保存した予定や未完了の話題を、適切な時期に思い出して聞く</label>
+          <label>声かけの方法
+            <select id="setFollowUpDelivery"><option value="bubble">吹き出しのみ（おすすめ）</option><option value="voice">声＋Live2D（明示的に選択）</option></select>
+          </label>
+          <label><input type="checkbox" id="setFollowUpQuietEnabled" /> 静音時間を守る</label>
+          <div class="follow-up-quiet-hours"><label>開始 <input id="setFollowUpQuietStart" type="time" /></label><label>終了 <input id="setFollowUpQuietEnd" type="time" /></label></div>
+          <label>1日の上限
+            <select id="setFollowUpDailyMax"><option value="1">1件</option><option value="2">2件まで</option></select>
+          </label>
+          <p class="hint">既定はOFF・吹き出しのみです。保存した「未完了の話題」「予定」だけを使い、記憶共有設定にかかわらず新しいAPI呼び出しや追加費用は発生しません。10分以上操作がない時に確認し、起動後5分は待ちます。同じ話題は24時間空け、1起動1件・1日最大2件です。集中モード、静音時間、作業・ゲーム・全画面を優先して控えます。</p>
+        </fieldset>
+
+        <fieldset>
+          <legend>カレンダーに合わせた行動</legend>
+          <label><input type="checkbox" id="setCalendarBriefingEnabled" /> 朝の予定まとめを自動表示する</label>
+          <label>表示時刻 <input type="time" id="setCalendarBriefingTime" /></label>
+          <label><input type="checkbox" id="setCalendarClassQuietEnabled" /> 登録した授業中は自発通知を控える</label>
+          <label>授業開始の何分前から控えるか <input type="number" id="setCalendarClassQuietLead" min="0" max="180" /></label>
+          <label><input type="checkbox" id="setCalendarDeadlinesEnabled" /> 課題締切の通知を使う</label>
+          <label><input type="checkbox" id="setCalendarExamsEnabled" /> 試験前の通知を使う</label>
+          <label><input type="checkbox" id="setCalendarEventsEnabled" /> その他の予定開始前通知を使う</label>
+          <label>通知の目安（分前） <input type="number" id="setCalendarReminderLead" min="5" max="10080" /></label>
+          <label><input type="checkbox" id="setCalendarFollowUpsEnabled" /> 試験の翌日以降に結果を尋ねる</label>
+          <label><input type="checkbox" id="setCalendarStudyEnabled" /> 試験・課題に合わせて勉強を提案する</label>
+          <label><input type="checkbox" id="setCalendarVoiceEnabled" /> お知らせを音声で読む（初期OFF）</label>
+          <label><input type="checkbox" id="setCalendarCloudVoiceEnabled" /> クラウド音声へ予定の短い通知文を送ることを許可</label>
+          <label><input type="checkbox" id="setCalendarQuietEnabled" /> 静音時間を守る</label>
+          <div class="follow-up-quiet-hours"><label>静音開始 <input type="time" id="setCalendarQuietStart" /></label><label>静音終了 <input type="time" id="setCalendarQuietEnd" /></label></div>
+          <p class="hint">すべて初期OFFです。予定内容は端末内で定型文にし、DeepSeek APIには送りません。クラウド音声を選ぶ場合も、別の許可が必要です。アプリ起動後2分は待ち、時間を過ぎた通知をまとめて出しません。</p>
+        </fieldset>
+
+        <fieldset>
+          <legend>音声入力 / 自発発話</legend>
+          <label><input type="checkbox" id="setSpeechEnabled" /> マイク音声入力を使う</label>
+          <label><input type="checkbox" id="setAutonomyActionsEnabled" /> 自発的な小さな動作を有効にする（API呼び出しなし）</label>
+          <label>自発動作の間隔（分） <input id="setAutonomyActionMinutes" type="number" min="1" max="60" /></label>
+          <label><input type="checkbox" id="setIdleEnabled" /> 自発的な独り言を有効にする（DeepSeek APIを使用）</label>
+          <label>独り言までの無操作時間（分） <input id="setIdleMinutes" type="number" min="5" max="240" /></label>
+          <label><input type="checkbox" id="setAutonomyFocusMode" /> 集中モード（独り言・自発動作を一時停止）</label>
+          <label><input type="checkbox" id="setDesktopContextEnabled" /> Windowsの利用状況に合わせて自発行動を調整する（明示許可）</label>
+          <p class="hint">許可すると、無操作時間・前面アプリの大分類・全画面状態をこのPC内だけで確認します。アプリ名は分類後に破棄し、DeepSeek APIへ送りません。画面、キー入力、クリップボード、ウィンドウ名、閲覧URLは取得しません。</p>
+          <p class="hint">独り言は最短5分間隔・1時間に最大3回です。会話・音声再生・集中モード・DeepSeekちゃんの全画面表示中は自動動作を控えます。</p>
+        </fieldset>
+
+        <div id="pluginList" class="hint"></div>
+        <button id="btnSaveSettings" class="primary">設定を保存</button>
+        <span id="settingsSaved" class="hint"></span>
+      </div>
+    </div>
+
+    <script src="../src/core/audio-buffer.js"></script>
+    <script src="../src/core/thinking-fillers.js"></script>
+    <script src="../src/core/avatar-motion.js"></script>
+    <script src="../src/core/instant-reaction.js"></script>
+    <script src="../src/core/silent-reactions.js"></script>
+    <script src="../src/core/motion-arbitration.js"></script>
+    <script src="../src/core/parser.js"></script>
+    <script src="../src/core/adaptive-voice.js"></script>
+    <script src="../src/core/streaming-speech.js"></script>
+    <script src="vendor/live2dcubismcore.min.js"></script>
+    <script src="vendor/pixi.min.js"></script>
+    <script src="vendor/pixi-unsafe-eval.min.js"></script>
+    <script src="vendor/cubism4.min.js"></script>
+    <script src="avatar-live2d.js"></script>
+    <script src="renderer.js"></script>
+  </body>
+</html>
